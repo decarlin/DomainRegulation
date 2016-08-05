@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import theano
 import theano.tensor as T
 import numpy
@@ -257,10 +259,10 @@ class masked_GBRBM(rbm.RBM):
 
         return monitoring_cost, updates
 
-def train_masked_rbm(learning_rate=0.03, training_epochs=500, batch_size=20,
-                    output_folder='rbm_output/',
-                    train_set_x_full_df,
-                    regulators):
+def train_masked_rbm(train_set_x_full_df,
+                    regulators,learning_rate=0.03, training_epochs=500, batch_size=20,
+                    output_folder='rbm_output/'
+                    ):
     #first load the sets data
 
 
@@ -269,7 +271,7 @@ def train_masked_rbm(learning_rate=0.03, training_epochs=500, batch_size=20,
     #witch row's correspond to an example.
 
     entities_x=list(train_set_x_full_df.columns.values)[1:]
-    sample_names=list(train_set_x_full_df[train_set_x_full.columns[0]])
+    sample_names=list(train_set_x_full_df[train_set_x_full_df.columns[0]])
 
     [regulators_agree,train_set_x_full,entities_agree]=makeMatricesAgree(regulators.interaction_matrix.toarray(),regulators.entities_order,train_set_x_full_df,entities_x)
 
@@ -315,9 +317,9 @@ def train_masked_rbm(learning_rate=0.03, training_epochs=500, batch_size=20,
     #################################
     #     Training the RBM          #
     #################################
-    if not os.path.isdir(output_folder):
-        os.makedirs(output_folder)
-    os.chdir(output_folder)
+    #if not os.path.isdir(output_folder):
+    #    os.makedirs(output_folder)
+    #os.chdir(output_folder)
 
     # start-snippet-5
     # it is ok for a theano function to have no output
@@ -353,11 +355,10 @@ def train_masked_rbm(learning_rate=0.03, training_epochs=500, batch_size=20,
     #h=masked_rbm.propup(train_set_x_full.get_value())
     pre_sigmoid_ph, ph_mean, ph_sample = masked_rbm.sample_h_given_v(train_set_x_full)
 
-    return masked_rbm,ph_mean,regulators.regulators_order,sample_names
+    return masked_rbm,ph_mean,regulators.regulators_order,sample_names,entities_agree
 
-def cross_train_masked_RBM(n_fold=5,
-                           x_full_df,
-                           regulators):
+def cross_train_masked_RBM(x_full_df,
+                           regulators,n_fold=5):
 
     #assign a fold to each row
 
@@ -368,20 +369,29 @@ def cross_train_masked_RBM(n_fold=5,
 if __name__ == '__main__':
     #parse input options
     parser = OptionParser()
-    parser.add_option("-d", "--data", dest="train_data_file", action="store", type="string", default='test_data/all_data.tab',
+    parser.add_option("-d", "--data", dest="train_data_file", action="store", type="string", default='/Users/danielcarlin/projects/regulator_RBM/test_data/all_data.tab',
                       help="File containining a samples (rows) by genes (columns), tab delimited data")
     parser.add_option("-r", "--regulators", dest="regulator_list_file", action="store", type="string", default='/Users/danielcarlin/Data/Multinet/regulatory_filtlered5.list_t',
                       help="File containining a list of lists (in list_t format), first column is the list name, subsequent columns are genes associated with that list")
+    parser.add_option('-o', "--output", dest="output", action="store", type="string", default='output.txt',help ="output file of hidden layer probabilities")
+    parser.add_option('-l',"--learning-rate", dest="learning_rate", action='store', type='float', default=0.03, help="learning rate for RBM, default=0.03.  Generally, if things aren't converging, decrease this value")
+    parser.add_option('-m', "--connection-matrix", dest="c_mat_file", action='store', type='string', default=None, help="output connection matrix to file")
+    parser.add_option('-c', "--correlation-file", dest="corr_file", action='store', type='string', default=None, help="file for correlation between expression and regulon")
     xval=False
+    (opts, args) = parser.parse_args()
 
-    train_set_x_full_df = pandas.read_table(train_data_file)
-    regulators=rs.regulator_list(regulator_list_file)
-
+    train_set_x_full_df = pandas.read_table(opts.train_data_file)
+    regulators=rs.regulator_list(opts.regulator_list_file)
+    #opts.c_mat_file='/Users/danielcarlin/PycharmProjects/DomainRegulation/conn_out.tab'
 
     if xval:
         cross_train_masked_RBM(x_full_df=train_set_x_full_df,regulators=regulators)
     else:
-        mRBM,train_mean_h,regulons,sample_names=train_masked_rbm(train_set_x_full_df=train_set_x_full_df,regulators=regulators)
+        mRBM,train_mean_h,regulons,sample_names,entities=train_masked_rbm(train_set_x_full_df=train_set_x_full_df,regulators=regulators,learning_rate=opts.learning_rate)
         h_prob=train_mean_h.eval()
         out_df=pandas.DataFrame(h_prob,columns=regulons,index=sample_names)
-        out_df.to_csv(path_or_buf='/Users/danielcarlin/projects/regulator_RBM/test_output/trained_Multinet_TF_regulons.TEST.tab',sep='\t')
+        out_df.to_csv(path_or_buf=opts.output,sep='\t')
+
+    if opts.c_mat_file is not None:
+        outConn=pandas.DataFrame(mRBM.W.eval(),columns=regulons, index=entities)
+        outConn.to_csv(path_or_buf=opts.c_mat_file, sep='\t')
